@@ -5,6 +5,40 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: iot-api
+    ports:
+      - "8000:8000"
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_QUEUE: iot.events
+      DB_PATH: /data/events.db
+    volumes:
+      - iot_data:/data
+    depends_on:
+      - rabbitmq
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: iot-worker
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_QUEUE: iot.events
+      RABBITMQ_RETRY_QUEUE: iot.events.retry
+      RABBITMQ_DLQ_QUEUE: iot.events.dlq
+      DB_PATH: /data/events.db
+      MAX_RETRIES: "5"
+      RETRY_DELAY_MS: "10000"
+    volumes:
+      - iot_data:/data
+    depends_on:
+      - rabbitmq
+
+volumes:
+  iot_data:

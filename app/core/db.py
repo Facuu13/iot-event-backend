@@ -1,7 +1,8 @@
+import os
 import sqlite3
 from typing import List, Dict, Any
 
-DB_PATH = "events.db"
+DB_PATH = os.getenv("DB_PATH", "events.db")
 
 def get_last_events(limit: int = 50) -> List[Dict[str, Any]]:
     conn = sqlite3.connect(DB_PATH)

@@ -1,12 +1,13 @@
+import logging
 from fastapi import APIRouter, BackgroundTasks
 from app.models.event import SensorEvent
 from app.core.rabbitmq import publish_event
-from typing import List
 from app.core.db import get_last_events
+from typing import List
 
+logger = logging.getLogger("api")
 
 router = APIRouter()
-
 events_db: List[SensorEvent] = []
 
 @router.get("/health")
@@ -15,14 +16,13 @@ def health_check():
 
 @router.post("/ingest")
 def ingest_event(event: SensorEvent, background_tasks: BackgroundTasks):
-    # guardado local para test (temporal)
     events_db.append(event)
+    payload = event.model_dump(mode="json")
 
-    # encolar en rabbit (mandamos dict serializable)
-    payload = event.model_dump(mode="json")  # Pydantic v2 friendly
+    logger.info(f"ingest accepted event_id={event.event_id} device_id={event.device_id}")
     background_tasks.add_task(publish_event, payload)
 
-    return {"message": "Event stored + enqueued"}
+    return {"message": "Event stored + enqueued", "event_id": event.event_id}
 
 @router.get("/events")
 def get_events():

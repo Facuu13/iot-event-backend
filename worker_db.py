@@ -2,17 +2,25 @@ import json
 import sqlite3
 import time
 import pika
+import logging
+import os
 
-RABBITMQ_HOST = "localhost"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("worker")
 
-MAIN_QUEUE = "iot.events"
-RETRY_QUEUE = "iot.events.retry"
-DLQ_QUEUE = "iot.events.dlq"
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 
-DB_PATH = "events.db"
+MAIN_QUEUE = os.getenv("RABBITMQ_QUEUE", "iot.events")
+RETRY_QUEUE = os.getenv("RABBITMQ_RETRY_QUEUE", "iot.events.retry")
+DLQ_QUEUE = os.getenv("RABBITMQ_DLQ_QUEUE", "iot.events.dlq")
 
-MAX_RETRIES = 5
-RETRY_DELAY_MS = 10_000  # 10s
+DB_PATH = os.getenv("DB_PATH", "events.db")
+
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", "5"))
+RETRY_DELAY_MS = int(os.getenv("RETRY_DELAY_MS", "10000"))
 
 
 def init_db():
@@ -123,27 +131,27 @@ def main():
             # ✅ Procesamiento real
             inserted = insert_event(event)
             if inserted:
-                print(f"💾 Stored: {event['event_id']}")
+                logger.info(f"💾 Stored: {event['event_id']}")
             else:
-                print(f"♻️ Duplicate ignored: {event['event_id']}")
+                logger.info(f"♻️ Duplicate ignored: {event['event_id']}")
 
             # ✅ ACK
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {e}"
-            print(f"❌ Failed (retry={retry_count}) → {error_msg}")
+            logger.error(f"❌ Failed (retry={retry_count}) → {error_msg}")
 
             # ⛔ Si ya llegamos al máximo → DLQ
             if retry_count >= MAX_RETRIES:
                 publish_to_dlq(ch, body_bytes, retry_count, error_msg)
-                print("🪦 Sent to DLQ")
+                logger.info("🪦 Sent to DLQ")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
             # 🔁 Reintento: mandamos a retry queue con retry_count+1
             publish_with_retry(ch, body_bytes, retry_count + 1)
-            print(f"⏳ Sent to RETRY queue (next retry={retry_count + 1})")
+            logger.info(f"⏳ Sent to RETRY queue (next retry={retry_count + 1})")
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
     channel.basic_qos(prefetch_count=1)
